@@ -875,3 +875,184 @@ A combination of the following strategies is recommended:
 4. Read replicas for large-scale deployments.
 
 This approach minimizes database load, improves response time, and provides a better user experience while maintaining scalability.
+
+
+# Stage 5
+
+## Problems in Current Implementation
+
+Current pseudocode:
+
+```text
+function notify_all(student_ids, message):
+    for student_id in student_ids:
+        send_email(student_id, message)
+        save_to_db(student_id, message)
+        push_to_app(student_id, message)
+```
+
+### Shortcomings
+
+1. Sequential Processing
+
+All 50,000 students are processed one by one, making the operation very slow.
+
+2. Poor Scalability
+
+The application server becomes overloaded when handling large notification campaigns.
+
+3. Failure Handling Issue
+
+If send_email() fails after processing some students, the remaining students may never receive notifications.
+
+4. No Retry Mechanism
+
+Temporary email provider failures can cause permanent notification loss.
+
+5. Tight Coupling
+
+Email delivery, database operations, and push notifications are executed together in a single flow.
+
+6. No Monitoring
+
+There is no mechanism to track failed notifications.
+
+---
+
+## Example Failure Scenario
+
+Logs indicate that send_email() failed for 200 students midway.
+
+Problems:
+
+- Some students received email and notification.
+- Some students received only database records.
+- Some students received nothing.
+- System state becomes inconsistent.
+
+---
+
+## Improved Design
+
+Use asynchronous processing with a message queue.
+
+Workflow:
+
+1. HR clicks "Notify All".
+2. Notification record is created in the database.
+3. A job is published to a queue.
+4. Worker services process notifications independently.
+5. Failed jobs are retried automatically.
+
+Architecture:
+
+```text
+HR Portal
+    |
+    v
+Notification Service
+    |
+    v
+Message Queue
+    |
+    +----> Email Worker
+    |
+    +----> Push Notification Worker
+    |
+    +----> Logging Worker
+```
+
+---
+
+## Revised Pseudocode
+
+```text
+function notify_all(student_ids, message):
+
+    notification_id = create_notification_record(message)
+
+    for student_id in student_ids:
+
+        publish_to_queue({
+            notificationId: notification_id,
+            studentId: student_id,
+            message: message
+        })
+
+
+
+worker process_notification(job):
+
+    save_to_db(job)
+
+    send_email(job)
+
+    push_to_app(job)
+
+    mark_completed(job)
+```
+
+---
+
+## Should Database Save and Email Sending Happen Together?
+
+No.
+
+Database save and email sending should be separated.
+
+Reason:
+
+- Database operations are usually fast and reliable.
+- Email delivery depends on external providers.
+- Email service failures should not affect notification storage.
+
+Recommended flow:
+
+```text
+Save Notification in DB
+        |
+        v
+Publish Queue Message
+        |
+        +----> Email Worker
+        |
+        +----> Push Worker
+```
+
+---
+
+## Reliability Improvements
+
+1. Retry Mechanism
+
+Failed jobs are retried automatically.
+
+2. Dead Letter Queue (DLQ)
+
+Repeatedly failing jobs are moved to a separate queue for investigation.
+
+3. Idempotency
+
+Duplicate processing should not create duplicate notifications.
+
+4. Monitoring
+
+Track:
+
+- Sent notifications
+- Failed notifications
+- Retry counts
+
+5. Horizontal Scaling
+
+Multiple workers can process notifications simultaneously.
+
+---
+
+## Benefits of the New Design
+
+- Supports 50,000+ students efficiently.
+- Handles failures gracefully.
+- Faster notification delivery.
+- Easier monitoring and maintenance.
+- Scales horizontally as user count grows.
