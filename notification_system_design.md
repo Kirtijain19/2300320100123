@@ -454,3 +454,143 @@ JSON response standards:
 ---
 
 This Stage 1 design provides a pragmatic foundation for a campus notification platform: well-defined REST endpoints, a simple but extensible data model, consistent error handling, and Socket.IO-based real-time delivery for connected clients. Future stages can enhance delivery channels, add templating and scheduling, and introduce analytics and administrative controls.
+
+
+# Stage 2
+## Database Selection
+
+MongoDB is selected for this system because notifications are document-oriented, schema flexibility is required for metadata, and it supports horizontal scaling through sharding. It also provides high write throughput which is suitable for notification workloads.
+
+## Collection: notifications
+
+{
+  "_id": "ObjectId",
+  "recipientId": "string",
+  "title": "string",
+  "message": "string",
+  "category": "placements",
+  "priority": "high",
+  "isRead": false,
+  "metadata": {},
+  "createdAt": "Date",
+  "updatedAt": "Date"
+}
+
+## Indexes
+db.notifications.createIndex({ recipientId: 1 })
+
+db.notifications.createIndex({
+  recipientId: 1,
+  isRead: 1
+})
+
+db.notifications.createIndex({
+  recipientId: 1,
+  category: 1
+})
+
+db.notifications.createIndex({
+  createdAt: -1
+})
+
+## Example Queries
+### Create Notification
+
+db.notifications.insertOne({
+  recipientId: "user123",
+  title: "Placement Drive Open",
+  message: "ABC Company registrations started",
+  category: "placements",
+  priority: "high",
+  isRead: false,
+  metadata: {
+    company: "ABC Company"
+  },
+  createdAt: new Date(),
+  updatedAt: new Date()
+})
+
+### List User Notifications
+db.notifications.find({
+  recipientId: "user123"
+})
+.sort({ createdAt: -1 })
+.limit(20)
+
+### Filter by Category
+db.notifications.find({
+  recipientId: "user123",
+  category: "placements"
+})
+
+### Unread Notifications
+db.notifications.find({
+  recipientId: "user123",
+  isRead: false
+})
+
+### Mark Read
+db.notifications.updateOne(
+  { _id: ObjectId("notificationId") },
+  {
+    $set: {
+      isRead: true,
+      updatedAt: new Date()
+    }
+  }
+)
+
+### Mark All Read
+db.notifications.updateMany(
+  {
+    recipientId: "user123",
+    isRead: false
+  },
+  {
+    $set: {
+      isRead: true,
+      updatedAt: new Date()
+    }
+  }
+)
+
+# Problems as Data Grows
+
+1. Slow Queries
+
+Millions of notifications hone par fetch slow ho sakta hai.
+
+Solution: Proper indexing.
+
+2. Storage Growth
+
+Purani notifications bahut storage consume karengi.
+
+Solution:
+
+Archival strategy
+TTL collections
+Old notifications move to cold storage
+
+3. High Concurrent Reads
+
+Exam results ya placement results ke time sudden traffic spike.
+
+Solution:
+Read replicas
+Caching (Redis)
+
+4. High Write Volume
+
+Bulk notification campaigns.
+
+Solution:
+Batch inserts
+Message queue (RabbitMQ/Kafka)
+
+5. Single Server Bottleneck
+
+Ek Mongo instance overload ho sakta hai.
+
+Solution:
+Sharding on recipientId
