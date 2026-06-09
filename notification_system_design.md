@@ -771,3 +771,107 @@ AND createdAt >= CURRENT_TIMESTAMP - INTERVAL '7 days';
 CREATE INDEX idx_type_created
 ON notifications(notificationType, createdAt);
 ```
+
+# Stage 4
+
+## Problem Statement
+
+Currently, notifications are fetched from the database every time a student loads a page. As the number of users and notifications increases, the database experiences high read traffic, resulting in increased latency and poor user experience.
+
+## Solution 1: Caching with Redis
+
+Store frequently accessed notifications in Redis.
+
+### Workflow
+
+1. User requests notifications.
+2. Application checks Redis cache.
+3. If data exists (cache hit), return data directly.
+4. If data does not exist (cache miss), fetch from database and store in Redis.
+
+### Advantages
+
+- Significantly reduces database reads.
+- Faster response times.
+- Improves user experience.
+
+### Tradeoffs
+
+- Additional infrastructure required.
+- Cache invalidation must be handled carefully.
+- Slight increase in memory usage.
+
+---
+
+## Solution 2: Pagination
+
+Instead of loading all notifications at once, return notifications in smaller chunks.
+
+### Example
+
+```http
+GET /api/v1/notifications?page=1&limit=20
+```
+
+### Advantages
+
+- Reduces data transfer.
+- Lower database load.
+- Faster API responses.
+
+### Tradeoffs
+
+- Requires multiple API calls to view older notifications.
+- Slightly more frontend implementation effort.
+
+---
+
+## Solution 3: Real-Time Updates Using Socket.IO
+
+Instead of fetching notifications on every page load, establish a persistent WebSocket connection.
+
+### Workflow
+
+1. User loads notifications once.
+2. Client establishes Socket.IO connection.
+3. New notifications are pushed automatically by the server.
+
+### Advantages
+
+- Eliminates unnecessary polling.
+- Reduces repeated database queries.
+- Provides real-time experience.
+
+### Tradeoffs
+
+- Additional server resources for maintaining connections.
+- More complex infrastructure compared to simple REST APIs.
+
+---
+
+## Solution 4: Database Read Replicas
+
+Use read replicas to distribute read traffic.
+
+### Advantages
+
+- Reduces load on the primary database.
+- Improves scalability.
+
+### Tradeoffs
+
+- Additional infrastructure cost.
+- Replication lag may cause slightly stale data.
+
+---
+
+## Recommended Approach
+
+A combination of the following strategies is recommended:
+
+1. Pagination for all notification APIs.
+2. Redis caching for recently accessed notifications.
+3. Socket.IO for real-time notification delivery.
+4. Read replicas for large-scale deployments.
+
+This approach minimizes database load, improves response time, and provides a better user experience while maintaining scalability.
