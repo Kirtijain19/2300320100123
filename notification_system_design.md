@@ -462,7 +462,7 @@ This Stage 1 design provides a pragmatic foundation for a campus notification pl
 MongoDB is selected for this system because notifications are document-oriented, schema flexibility is required for metadata, and it supports horizontal scaling through sharding. It also provides high write throughput which is suitable for notification workloads.
 
 ## Collection: notifications
-
+```json
 {
   "_id": "ObjectId",
   "recipientId": "string",
@@ -475,27 +475,37 @@ MongoDB is selected for this system because notifications are document-oriented,
   "createdAt": "Date",
   "updatedAt": "Date"
 }
+```
 
 ## Indexes
+```
 db.notifications.createIndex({ recipientId: 1 })
+```
 
+```
 db.notifications.createIndex({
   recipientId: 1,
   isRead: 1
 })
+```
 
+```
 db.notifications.createIndex({
   recipientId: 1,
   category: 1
 })
+```
 
+```
 db.notifications.createIndex({
   createdAt: -1
 })
+```
 
 ## Example Queries
 ### Create Notification
 
+```
 db.notifications.insertOne({
   recipientId: "user123",
   title: "Placement Drive Open",
@@ -509,27 +519,39 @@ db.notifications.insertOne({
   createdAt: new Date(),
   updatedAt: new Date()
 })
+```
 
 ### List User Notifications
+
+```
 db.notifications.find({
   recipientId: "user123"
 })
 .sort({ createdAt: -1 })
 .limit(20)
+```
 
 ### Filter by Category
+
+```
 db.notifications.find({
   recipientId: "user123",
   category: "placements"
 })
+```
 
 ### Unread Notifications
+
+```
 db.notifications.find({
   recipientId: "user123",
   isRead: false
 })
+```
 
 ### Mark Read
+
+```
 db.notifications.updateOne(
   { _id: ObjectId("notificationId") },
   {
@@ -539,8 +561,11 @@ db.notifications.updateOne(
     }
   }
 )
+```
 
 ### Mark All Read
+
+```
 db.notifications.updateMany(
   {
     recipientId: "user123",
@@ -553,18 +578,19 @@ db.notifications.updateMany(
     }
   }
 )
+```
 
 # Problems as Data Grows
 
 1. Slow Queries
 
-Millions of notifications hone par fetch slow ho sakta hai.
+It can be slow on fetching Millions of notifications.
 
 Solution: Proper indexing.
 
 2. Storage Growth
 
-Purani notifications bahut storage consume karengi.
+Old notifications consume lots of storage.
 
 Solution:
 
@@ -574,7 +600,7 @@ Old notifications move to cold storage
 
 3. High Concurrent Reads
 
-Exam results ya placement results ke time sudden traffic spike.
+sudden traffic spike during Exam results or placement results
 
 Solution:
 Read replicas
@@ -590,7 +616,158 @@ Message queue (RabbitMQ/Kafka)
 
 5. Single Server Bottleneck
 
-Ek Mongo instance overload ho sakta hai.
+One Mongo instance can be overloaded.
 
 Solution:
 Sharding on recipientId
+
+
+# Stage 3
+
+## Query Analysis
+
+Given query:
+
+```sql
+SELECT *
+FROM notifications
+WHERE studentID = 1042
+AND isRead = false
+ORDER BY createdAt ASC;
+```
+
+## Is the query accurate?
+
+The query is functionally correct because it returns unread notifications for a student. However, it is not optimal for a production API because it uses SELECT *, does not implement pagination, and may return a large number of rows.    
+
+## Why is the query slow?
+
+Current database size:
+
+Students: 50,000
+Notifications: 5,000,000
+
+Possible reasons:
+
+1. Full Table Scan
+
+Without proper indexes, the database scans millions of rows to find matching records.
+
+2. Sorting Cost
+
+ORDER BY createdAt requires additional sorting if no suitable index exists.
+
+3. SELECT *
+
+Fetching unnecessary columns increases disk I/O and memory usage
+
+## Improved Query
+
+```sql
+SELECT notificationID,
+       title,
+       message,
+       createdAt
+FROM notifications
+WHERE studentID = 1042
+AND isRead = FALSE
+ORDER BY createdAt ASC;
+```
+
+## Recommended Index
+```sql
+CREATE INDEX idx_student_read_created
+ON notifications(studentID, isRead, createdAt);
+```
+
+## Why this index?
+
+The query filters by:
+
+studentID
+isRead
+
+and sorts by:
+
+createdAt
+
+The composite index matches the query pattern and allows efficient retrieval without additional sorting.
+
+## Computational Cost
+### Without Index
+Time Complexity: O(N)
+
+Database may scan all notification rows.
+
+For 5,000,000 notifications:
+
+O(5,000,000)
+
+### With Composite Index
+Time Complexity: O(log N + K)
+
+where:
+
+N = total notifications
+K = matching notifications
+
+Much faster than a full table scan.
+
+## Should We Add Indexes on Every Column?
+
+No.
+
+Adding indexes on every column is not effective.
+
+Problems
+Increased storage usage
+
+Each index consumes additional disk space.
+
+Slower INSERT/UPDATE/DELETE
+
+Every index must be updated whenever data changes.
+
+Unused indexes waste resources
+
+Indexes should only be created for frequently queried columns.
+
+Better Approach
+
+Create indexes based on:
+
+WHERE clauses
+JOIN conditions
+ORDER BY clauses
+Frequently executed queries
+
+
+## Query: Students Who Received Placement Notifications in Last 7 Days
+
+Assuming:
+
+notificationType column exists
+studentID identifies recipient
+
+### SQL
+
+```sql
+SELECT DISTINCT studentID
+FROM notifications
+WHERE notificationType = 'Placement'
+AND createdAt >= NOW() - INTERVAL 7 DAY;
+```
+
+### PostgreSQL Version
+```sql
+SELECT DISTINCT studentID
+FROM notifications
+WHERE notificationType = 'Placement'
+AND createdAt >= CURRENT_TIMESTAMP - INTERVAL '7 days';
+```
+
+## Recommended Index for Placement Query
+```sql
+CREATE INDEX idx_type_created
+ON notifications(notificationType, createdAt);
+```
