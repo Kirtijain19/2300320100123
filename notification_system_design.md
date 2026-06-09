@@ -1055,4 +1055,45 @@ Multiple workers can process notifications simultaneously.
 - Handles failures gracefully.
 - Faster notification delivery.
 - Easier monitoring and maintenance.
-- Scales horizontally as user count grows.
+- Scales horizontally as user count grows.  
+
+# Stage 6
+
+## Priority Inbox Approach
+
+Notifications are fetched from the provided API.
+
+Priority is determined using:
+
+1. Notification Type
+   - Placement = Highest
+   - Result = Medium
+   - Event = Lowest
+
+2. Timestamp
+   - More recent notifications receive higher priority.
+
+## Ranking Formula
+
+Priority Order:
+
+Placement > Result > Event
+
+Within the same type, notifications are sorted by timestamp in descending order.
+
+## Algorithm
+
+1. Fetch notifications from API.
+2. Assign weight based on notification type.
+3. Sort by:
+   - Type weight descending
+   - Timestamp descending
+4. Return top N notifications requested by the user.
+
+Time Complexity:
+
+Sorting: O(n log n)
+
+Space Complexity:
+
+O(n)
